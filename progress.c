@@ -84,6 +84,11 @@ char *default_proc_names[] = {"cp", "mv", "dd", "tar", "bsdtar", "cat", "rsync",
     "coreutils",
     "split",
     "gpg",
+    "_sfdownload",
+    "_sfupload",
+    "_sfupload-tar",
+    "_sfupload-dedupe",
+    "python3.11",
 #if defined(__APPLE__) || defined(__FreeBSD__)
     "gcp", "gmv",
 #endif
@@ -105,6 +110,7 @@ signed char flag_monitor = 0;
 signed char flag_monitor_continuous = 0;
 signed char flag_open_mode = 0;
 double throughput_wait_secs = 1;
+int required_min_size = 1000000000;
 
 WINDOW *mainwin;
 
@@ -187,6 +193,7 @@ assert(pids != NULL);
 proc_listpids(PROC_ALL_PIDS, 0, pids, nb_processes);
 for(i = 0; i < nb_processes; ++i) {
     if (pids[i] == 0) {
+	    printf("Skip idx: %s because pids[i] is 0", i);
         continue;
     }
     proc_name(pids[i], exe, sizeof(exe));
@@ -196,6 +203,8 @@ for(i = 0; i < nb_processes; ++i) {
         pid_count++;
         if(pid_count==max_pids)
             break;
+    } else {
+	    printf("exe: %s do not match bin name: %s", exe, bin_name);
     }
 }
 free(pids);
@@ -754,11 +763,12 @@ static struct option long_options[] = {
     {"command",              required_argument, 0, 'c'},
     {"pid",                  required_argument, 0, 'p'},
     {"ignore-file",          required_argument, 0, 'i'},
+    {"min-size",             required_argument, 0, 's'},
     {"open-mode",            required_argument, 0, 'o'},
     {0, 0, 0, 0}
 };
 
-static char *options_string = "vqdwmMha:c:p:W:i:o:";
+static char *options_string = "vqdwmMha:c:p:W:i:o:s:";
 int c,i;
 int option_index = 0;
 char *rp;
@@ -792,6 +802,7 @@ while(1) {
             printf("  -w --wait                    estimate I/O throughput and ETA (slower display)\n");
             printf("  -W --wait-delay secs         wait 'secs' seconds for I/O estimation (implies -w, default=%.1f)\n", throughput_wait_secs);
             printf("  -m --monitor                 loop while monitored processes are still running\n");
+            printf("  -s --min-size                minimal size, by default 1GB (ignore process with max opened file size is below that threshold)\n");
             printf("  -M --monitor-continuously    like monitor but never stop (similar to watch %s)\n", argv[0]);
             printf("  -a --additional-command cmd  add additional command to default command list\n");
             printf("  -c --command cmd             monitor only this command name (ex: firefox)\n");
@@ -860,6 +871,10 @@ while(1) {
         case 'W':
             flag_throughput = 1;
             throughput_wait_secs = atof(optarg);
+            break;
+
+        case 's':
+            required_min_size = atoi(optarg);
             break;
 
         case 'o':
@@ -1046,6 +1061,8 @@ for (i = 0 ; i < pid_count ; i++) {
             max_size = fdinfo.size;
         }
     }
+
+    if (max_size < required_min_size) max_size=0;
 
     if (!max_size) { // nothing found
     // this display is the root of too many confusion for the users, let's
